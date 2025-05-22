@@ -1,0 +1,1089 @@
+---
+title: "Time series analysis of malaria in pregnancy, using Wavelet
+transform and ARIMA models "
+author: "Oniyelu Dolapo"
+date: "`r Sys.Date()`"
+output: html_document
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+Author-generated code underpins the findings in the manuscript
+
+### Loading library
+
+```{r}
+library(deSolve)
+library(zoo)
+library(xts) 
+library(dplyr)
+require(ggplot2)
+library(dlm)
+library(forecast)
+library(readr) 
+library(biwavelet)
+library(wavelets)
+library(fields)
+library(tseries)
+library(car)
+```
+
+Import data: Low burden States
+
+```{r, echo=FALSE}
+setwd("C:\\Users\\Flourish PC\\Documents\\LEGEND_PAPER-20241119T151557Z-001\\LEGEND_PAPER\\NewHotSpotData")
+
+```
+
+### Select Region
+
+South Southern region (Cross Rivers State) Datapoints: 2299, 19 LGAs, 228 records per year
+
+```{r, echo=TRUE}
+tsCross <- read.csv("C:\\Users\\Flourish PC\\Documents\\LEGEND_PAPER-20241119T151557Z-001\\LEGEND_PAPER\\NewHotSpotData\\CrossRiver_LGA.csv") 
+head(tsCross, 3)
+```
+
+Note: Total Datapoints perculiarity per region
+
+South Southern region (Cross Rivers State) Datapoints: 2299, 19 LGAs, 228 records per year
+
+South Eastern region (Enugu State) Datapoints: 2178, 18 LGAs, 216 records per year
+
+South Western region (Ondo State) Datapoints: 2299, 19 LGAs, 228 records per year
+
+North Western region (Kebbi State) Datapoints: 2662, 22 LGAs, 264 records per year
+
+North Central region (Niger State) Datapoints: 3146, 26 LGAs, 312 records per year
+
+North Eastern region (Yobe State) Datapoints: 2178, 18 LGAs, 216 records per year
+
+Also Note: datapoints between 2015-2020 for instance Cross Rivers State =228 * 6years
+# Preprocessing
+
+Feature selection, select Major columns of analysis
+
+```{r, echo=TRUE}
+datam <-  tsCross$Confirmed.uncomplicated.Malaria
+dataMIP <- tsCross$Malaria.confirmed.pregnant.women
+summary(dataMIP)#check outliers
+summary(datam) #check outliers and missing data
+```
+
+### Select features
+
+Prepare dataset for arrangement in year and LGAs view
+
+```{r, echo=TRUE}
+LGAsort <-  tsCross$organisationunitname
+yearSORT <- tsCross$periodname
+
+arrang<- cbind.data.frame(LGAsort, yearSORT, datam, dataMIP)
+head(arrang,3)
+```
+
+### Visualize General malaria cases
+
+```{r, echo=TRUE}
+
+plot(datam, col="red",main="CrossRiver State: Malaria cases ",
+     type="l",lwd="0.5", xlab="Time (months)", ylab = "Malaria cases", xaxt="n")
+#Cross
+t<-axis(side = 1, at= c(seq(0,2299,228)), labels= c(2015,2016,2017,2018,2019,2020,2021,2022,2023, 2024,2025))
+
+```
+
+### Visualize confirmed malaria in pregnant women cases
+
+```{r}
+plot(dataMIP, col="orange",
+     type="l",lwd="0.5", xlab="Time (months)", ylab = "Malaria cases", xaxt="n", main="Malaria in pregnancy")
+# #Cross
+t<-axis(side = 1, at= c(seq(0,2299,228)), labels= c(2015,2016,2017,2018,2019,2020,2021,2022,2023, 2024,2025))
+```
+
+Note: x-axis format for other regions
+
+Always adjust x-axis units based on selected state datapoints
+
+Enugu t\<-axis(side = 1, at= c(seq(0,3146,228)), labels= c(2015,2016,2017,2018,2019,2020,2021,2022,2023, 2024,2025))
+
+Ondo t\<-axis(side = 1, at= c(seq(0,2299,228)), labels= c(2015,2016,2017,2018,2019,2020,2021,2022,2023, 2024,2025))
+
+kebbi t\<-axis(side = 1, at= c(seq(0,2662,264)), labels= c(2015,2016,2017,2018,2019,2020,2021,2022,2023, 2024,2025))
+
+Niger t\<-axis(side = 1, at= c(seq(0,3146,312)), labels= c(2015,2016,2017,2018,2019,2020,2021,2022,2023, 2024,2025))
+
+Yobe t\<-axis(side = 1, at= c(seq(0,2178,264)), labels= c(2015,2016,2017,2018,2019,2020,2021,2022,2023, 2024,2025))
+
+### To check Skewness of data distribution
+
+Histogram General malaria cases
+
+```{r}
+
+hist(datam, breaks=30, col="steelblue", main="Histogram", xlab="Values")
+
+```
+
+Histogram of malaria in pregnancy cases
+
+```{r}
+hist(dataMIP, breaks=30, col="steelblue", main="Histogram", xlab="Values")
+```
+
+Shapiro-Wilk Test for MIP cases
+
+```{r}
+shapiro_test <- shapiro.test(dataMIP)
+shapiro_test
+```
+
+###Normalize Data: Data is skewed, thus we apply square root transformation
+
+```{r}
+or<-datam
+orp<-dataMIP
+datam <- sqrt(datam)
+datam<-c(datam)
+dataMIP<-sqrt(dataMIP)
+dataMIP<-c(dataMIP)
+
+
+```
+
+## Fill in missing values using Kalman smoothening
+
+Define the date sequence (yearSORT) and apply filters Keep only the first 19 days of each month (matching LGA records)
+
+```{r}
+yearSORT <- seq(as.Date("2015-01-01"), as.Date("2025-01-19"), by = "day")
+yearSORT <- yearSORT[as.numeric(format(yearSORT, "%d")) <=19]  # Represents Cross RiversState 19 LGAs per month
+```
+
+Combine data into a data frame
+
+```{r}
+arrang1 <- cbind.data.frame(LGAsort, yearSORT, datam, dataMIP)
+head(arrang1)
+
+```
+
+Arrange dataset by LGAsort to ensure fill is location inclined
+
+```{r}
+df <- as.data.frame(arrang1)
+sort <- df %>% arrange(LGAsort)
+head(sort)
+```
+
+Extract sorted columns for analysis
+
+```{r}
+datam <- sort$datam
+dataMIP <- sort$dataMIP
+LGAarrang <- sort$LGAsort
+yeararrang <- sort$yearSORT
+```
+
+### Define the Kalman state-space model (Dynamic dW for pandemic effects)
+
+```{r}
+build_model <- function(disruption_effect) {
+  dlmModPoly(order = 1, dV = 0.1, dW = mean(disruption_effect))  # Time-varying dW
+}
+```
+
+Create pandemic disruption effect variable (for dataMIP smoothing)
+
+```{r}
+sort$disruption <- ifelse(
+  yearSORT >= as.Date("2020-03-01") & yearSORT <= as.Date("2020-12-19"), 1,
+  ifelse(yearSORT >= as.Date("2021-01-01"), exp(-0.1 * (as.numeric(yearSORT - as.Date("2021-01-01")))), 0)
+)  # Exponential decay in recovery phases
+
+```
+
+Replace missing values in 'dataMIP' using Kalman filter and smoother
+
+```{r}
+categories <- unique(sort$LGAsort)  # Get unique LGAsort categories
+
+for (LGAsort in categories) {
+  # Subset data for the current category
+  subset <- sort[sort$LGAsort == LGAsort, ]
+  
+  # Ensure subset is not empty
+  if (nrow(subset) == 0) {
+    print(paste("No data for LGAsort:", LGAsort))
+    next
+  }
+  
+  # Replace missing values for 'dataMIP' (full imputation)
+  if ("dataMIP" %in% names(subset)) {
+    dataMIP <- subset$dataMIP
+    if (!is.null(dataMIP) && length(dataMIP) > 0) {
+      model <- build_model(subset$disruption)  # Apply dynamic dW
+      filtered_dataMIP <- dlmFilter(dataMIP, model)
+      smoothed_dataMIP <- dlmSmooth(filtered_dataMIP)
+      missing_indices <- which(is.na(dataMIP))
+      dataMIP[missing_indices] <- smoothed_dataMIP$s[missing_indices]
+      subset$dataMIP <- dataMIP
+    }
+  }
+  
+  # Replace missing values for 'datam' 
+  if ("datam" %in% names(subset)) {
+    datam <- subset$datam
+    if (!is.null(datam) && length(datam) > 0) {
+      filtered_datam <- dlmFilter(datam, dlmModPoly(order = 1, dV = 0.1, dW = 0.01))  
+      
+      smoothed_datam <- dlmSmooth(filtered_datam)
+      missing_indices <- which(is.na(datam))
+      datam[missing_indices] <- smoothed_datam$s[missing_indices] 
+      subset$datam <- datam
+    }
+  }
+  
+    sort[sort$LGAsort == LGAsort, ] <- subset
+}
+head(sort)
+```
+
+Round results for final data consistency
+
+```{r}
+sort$datam <- sort$datam
+sort$dataMIP <- sort$dataMIP
+
+summary(sort)
+```
+
+Renaming for arranging back to monthly data, rather than based on LGAs
+
+```{r}
+sorts<- cbind.data.frame(sort)
+#head(sorts)
+```
+
+Convert yearSORT into 'MMM-YY'
+
+```{r}
+sorts$yearSORT <- format(as.Date(sorts$yearSORT), "%b-%y")
+
+# Define the custom order for yearsort levels
+custom_order <- c("Jan-15", "Feb-15", "Mar-15", "Apr-15", "May-15", "Jun-15",
+                  "Jul-15", "Aug-15", "Sep-15", "Oct-15", "Nov-15", "Dec-15",
+                  "Jan-16", "Feb-16", "Mar-16", "Apr-16", "May-16", "Jun-16",
+                  "Jul-16", "Aug-16", "Sep-16", "Oct-16", "Nov-16", "Dec-16",
+                  "Jan-17", "Feb-17", "Mar-17", "Apr-17", "May-17", "Jun-17",
+                  "Jul-17", "Aug-17", "Sep-17", "Oct-17", "Nov-17", "Dec-17",
+                  "Jan-18", "Feb-18", "Mar-18", "Apr-18", "May-18", "Jun-18",
+                  "Jul-18", "Aug-18", "Sep-18", "Oct-18", "Nov-18", "Dec-18",
+                  "Jan-19", "Feb-19", "Mar-19", "Apr-19", "May-19", "Jun-19",
+                  "Jul-19", "Aug-19", "Sep-19", "Oct-19", "Nov-19", "Dec-19",
+                  "Jan-20", "Feb-20", "Mar-20", "Apr-20", "May-20", "Jun-20",
+                  "Jul-20", "Aug-20", "Sep-20", "Oct-20", "Nov-20", "Dec-20",
+                  "Jan-21", "Feb-21", "Mar-21", "Apr-21", "May-21", "Jun-21",
+                  "Jul-21", "Aug-21", "Sep-21", "Oct-21", "Nov-21", "Dec-21",
+                  "Jan-22", "Feb-22", "Mar-22", "Apr-22", "May-22", "Jun-22",
+                  "Jul-22", "Aug-22", "Sep-22", "Oct-22", "Nov-22", "Dec-22",
+                  "Jan-23", "Feb-23", "Mar-23", "Apr-23", "May-23", "Jun-23",
+                  "Jul-23", "Aug-23", "Sep-23", "Oct-23", "Nov-23", "Dec-23",
+                  "Jan-24", "Feb-24", "Mar-24", "Apr-24", "May-24", "Jun-24",
+                  "Jul-24", "Aug-24", "Sep-24", "Oct-24", "Nov-24", "Dec-24", "Jan-25")
+
+```
+
+Apply custom order to yearSORT
+
+```{r}
+sorts$yearSORT <- factor(sorts$yearSORT, levels = custom_order, ordered = TRUE)
+```
+
+Ensure dataset remains sorted correctly
+
+```{r}
+sortss <- sorts %>% arrange(yearSORT)
+head(sortss)
+ #Plot original vs transformed data
+hist(orp, main = "CrossRiver State MIP Incidence Original Data", xlab = "Value", col = "lightblue")
+hist(sortss$dataMIP, main = "CrossRiver State MIP Incidence after Transformation", xlab = "Value", col = "lightblue")
+write_csv(sortss, "Cross.csv")
+Cross<-read.csv("Cross.csv")
+```
+
+# Prepare data for Pre-analysis and visualization of MIP and MC long-term trend
+
+```{r}
+datam<-Cross$datam
+dataMIP<-Cross$dataMIP
+LGAsort<-Cross$LGAsort
+yearSORT<-Cross$yearSORT
+disruption<-Cross$disruption
+head(Cross)
+```
+
+Visualise preprocessed data - General cases
+
+```{r}
+
+plot(datam,  col="red", xaxt="n", main="CrossRiver State preprocessed Times series \n Malaria cases",
+     type="l", xlab="Time (months)", ylab = "Malaria cases", lwd="0.5"     )
+t<-axis(side = 1, at= c(seq(0,2299,228)), labels= c(2015,2016,2017,2018,2019,2020,2021,2022,2023, 2024,2025))
+```
+
+-MIP cases
+
+```{r}
+plot(dataMIP, col="orange",
+     type="l",lwd="2", xlab="Time (months)", ylab = "Malaria cases", main="Malaria in pregnancy")
+t<-axis(side = 1, at= c(seq(0,2299,228)), labels= c(2015,2016,2017,2018,2019,2020,2021,2022,2023, 2024,2025))
+ 
+```
+
+## Prepare time series for trend and seasonality decomposition
+
+```{r}
+datam=ts(datam, start=c(2015, 1),
+         frequency=228)
+head(datam)
+ 
+```
+
+Revert to MIP data Original available MIP data length for analysis (2015 - 2020)
+
+```{r}
+arrang<- cbind.data.frame(yearSORT, dataMIP)
+arrang <- head(arrang, 1368)
+head(arrang)
+length(arrang$yearSORT)
+length(arrang$dataMIP)
+dataMIP <- arrang$dataMIP
+dataMIP=ts(dataMIP, start=c(2015, 1),
+           frequency=228)
+length(dataMIP)
+ 
+```
+
+## Decompose timeseries to understand its structure, trends, and seasonality
+
+```{r}
+
+#decomposing trends
+decomposedRes <- decompose(datam, type="additive") # use type = "additive" for additive components
+decomposedRe <- decompose(dataMIP, type="additive") # 
+ 
+```
+
+Visualise decomposed MC
+
+```{r}
+plot (decomposedRes) # see plot below
+ 
+```
+
+Visualise decomposed MIP
+
+```{r}
+plot (decomposedRe) # see plot below
+ 
+```
+
+To get MC seasonal monthly trend in state
+
+```{r}
+month <- 1:12
+Seasonwv<-decomposedRes$figure
+Seasonw<-decomposedRe$figure
+
+plot(Seasonwv, type='l', xlab = "Months",main = "CrossRiver State General Malaria Seasonal Trend", xaxt="n", ylab="Seasonality Index", col='red', las =2)
+axis(side = 1, at = seq(1, 228,19), labels = c("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"))
+
+ 
+```
+
+To get MIP seasonal monthly trend in state
+
+```{r}
+plot(Seasonw, type='l', xlab = "Months",main = "CrossRiver State MIP Seasonal Trend", xaxt="n", ylab="Seasonality Index", col='red', las =2)
+axis(side = 1, at = seq(1, 228,19), labels = c("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"))
+```
+
+# Variability of MIP cases over time compared to general MC cases
+
+## Wavelet Coherence
+
+```{r}
+dataMIP<-arrang$dataMIP
+length(datam)
+length(dataMIP)
+```
+
+Adjust MC data to be same length as MIP (range between 2015-2020)
+
+```{r}
+
+############ 
+######CONFIRM LENGTH OF DATA: 2015-2020
+datam <- head(datam, 1368)
+length(datam)
+arrang<- cbind.data.frame(arrang,datam)
+head(arrang)
+ 
+```
+
+format data for analysis and plot coherence
+
+```{r}
+cA <- ts(datam, start = c(2015, 1), frequency = 228)
+cB <- ts(dataMIP, start = c(2015, 1), frequency = 228)
+length(cB)
+length(cA)
+
+# Convert to numeric vectors
+y1 <- as.numeric(unlist(cB))
+y2 <- as.numeric(unlist(cA))
+# Analyze coherency
+A <- cbind(1:length(y1), y1)
+B <- cbind(1:length(y2), y2)
+#no. of simulations
+########
+nrands =50
+wtc.Cross = wtc(A,B, nrands =nrands)
+# Set margins
+par(oma=c(0,0,0,1 ), mar =c(5,4,5,5) +0.1)
+coherence<-plot(wtc.Cross,     plot.phase = TRUE,xaxt = "n",
+                lty.coi = 1, col.coi = "purple", lwd.coi=2,
+                lwd.sig = 2, arrow.lwd = 0.03, arrow.len=0.08,
+                ylab="Frequency", xlab = "Time(Months)",
+                plot.cb = T, main="CrossRiver State Coherence plot")
+
+#cross
+t<-axis(side = 1, at= c(seq(1,1368,228)), labels= c(2015,2016,2017,2018,2019,2020))
+ 
+```
+
+#Forecast of future trends of MIP cases \## Denoising data for wavelet-ARIMA/SARIMAX modelling
+
+```{r}
+head(cB) 
+y <- as.numeric(unlist(cB))
+length(cB)
+# Parameters
+omega <- 6  # Angular frequency
+# Morlet wavelet function
+morlet_wavelet <- function(t, scale, omega, A) {
+  A * exp(1i * omega * t) * exp(-t^2 / (2 * scale^2))
+}
+# Reconstruct the signal using wavelet coefficients
+reconstructed_signal <- numeric(length(y))
+threshold <- 0.5  # Example threshold value
+for (j in seq(0, 3)) {  # Adjusted to 3 levels as an example
+  scale <- 2^(j / 2)
+  A <- 1 / scale  # Amplitude inversely proportional to scale
+  for (k in 1:length(y)) {
+    t <- (1:length(y)) - k
+    wt <- sum(morlet_wavelet(t, scale, omega, A) * y)  # Wavelet transform
+    if (abs(wt) >= threshold) {  # Apply thresholding
+      reconstructed_signal[k] <- reconstructed_signal[k] +
+        Re(wt) / sqrt(scale)
+    }
+  }
+}
+
+```
+
+Visualise MIP before denoise
+
+```{r}
+plot(y, type = "l", xaxt="n", col = "red", main = " Preprocessed CrossRiver State MIP Time series", ylab = "Malaria Cases")
+t<- axis(side = 1, at= c(seq(1,length(y),228)), labels= c(2015,2016,2017,2018,2019,2020))
+```
+
+Visualise denoised MIP data
+
+```{r}
+plot(cB,  type = "l", col = "purple", main = "Reconstructed CrossRiver State MIP Time series", ylab = "Malaria Cases")
+t<- axis(side = 1, at= c(seq(1,length(y),228)), labels= c(2015,2016,2017,2018,2019,2020))
+###
+
+# Save the reconstructed signal as a CSV file
+MIPCross <- reconstructed_signal
+mDNCross <- as.data.frame(MIPCross)
+write_csv(mDNCross, "mDNCross.csv")
+```
+
+###use denoised data to set initial value for ARIMA/ SARIMAX model
+
+```{r}
+cB<- read.csv("mDNCross.csv")
+cB=ts(cB, start=c(2015, 1),
+      frequency=228)
+length(cB)
+```
+
+### Split the data into training and test sets
+
+```{r}
+train_size <- floor(0.70 * length(cB))
+train_cB <- cB[1:train_size]
+test_cB <- cB[(length(train_cB) + 1):length(cB)]
+```
+
+### Plot ACF and PACF
+
+```{r}
+acf(train_cB, main = "CrossRiver State: \n ACF of Training Data")
+pacf(train_cB, main = "PACF of Training Data")
+```
+
+###Perform ADF test to determine the number of differences needed
+
+```{r}
+# 
+
+adf_test <- adf.test(train_cB)
+adf_test
+station<-if (adf_test$p.value > 0.05) {
+  train_cB_diff <- diff(train_cB)
+  adf_test_diff <- adf.test(train_cB_diff)
+  d <- 1
+  if (adf_test_diff$p.value > 0.05) {
+    train_cB_diff2 <- diff(train_cB_diff)
+    adf_test_diff2 <- adf.test(train_cB_diff2)
+    if (adf_test_diff2$p.value <= 0.05) {
+      d <- 2
+    }
+  }
+} else {
+  d <- 0
+}
+
+d
+
+p <- 1
+q <- 3
+
+# # Fit the ARIMA model with initial values
+initial_model <- arima(train_cB, order = c(p, d, q))
+
+# Print the initial model summary
+summary(initial_model)
+AIC(initial_model)
+```
+
+# ARIMA analysis
+
+```{r}
+
+find_best_arima <- function(train_cB, test_cB) {
+  best_aic <- Inf
+  best_order <- c(0, 0, 0)
+  best_model <- NULL
+  last_three_models <- list()
+  best_models <- list()  # Added to store models
+  metrics <- data.frame(Model = character(), AIC = numeric(), BIC = numeric(), RMSE = numeric(), MAPE = numeric(), VIF = numeric(), stringsAsFactors = FALSE)
+  
+# Determine initial values for p, d, q (example values, update as needed)
+for (p in 1:3) {
+    for (d in 0:2) {
+      for (q in 0:3) {
+        model <- tryCatch({
+          arima(train_cB, order = c(p, d, q), optim.method = "BFGS", optim.control = list(maxit = 1000))
+        }, error = function(e) NULL)
+        
+        if (!is.null(model)) {
+          aic <- AIC(model)
+          bic <- BIC(model)
+          forecast_values <- forecast(model, h = length(test_cB))
+          
+          # Calculate RMSE and MAPE using the test data
+          rmse <- sqrt(mean((forecast_values$mean - test_cB)^2, na.rm = TRUE))
+          mape <- mean(abs((forecast_values$mean - test_cB) / test_cB), na.rm = TRUE) * 100
+          
+          # Calculate VIF
+          vif_values <- tryCatch({
+            vif(model)
+          }, error = function(e) rep(NA, length(coef(model))))
+          
+          avg_vif <- mean(vif_values, na.rm = TRUE)
+          
+          metrics <- rbind(metrics, data.frame(Model = paste(p, d, q, sep = ","), AIC = aic, BIC = bic, RMSE = rmse, MAPE = mape, VIF = avg_vif))
+          
+          # Store the best models
+          best_models[[paste(p, d, q, sep = ",")]] <- model
+          
+          if (aic < best_aic && !is.nan(aic)) {
+            best_aic <- aic
+            best_order <- c(p, d, q)
+            best_model <- model
+          }
+          
+          # Store the last three models
+          last_three_models <- append(last_three_models, list(model))
+          if (length(last_three_models) > 3) {
+            last_three_models <- last_three_models[-1]
+          }
+        }
+      }
+    }
+  }
+  
+  return(list(best_model = best_model, best_order = best_order, best_aic = best_aic, last_three_models = last_three_models, metrics = metrics, best_models = best_models))
+}
+
+# Find the best ARIMA model
+best_arima <- find_best_arima(train_cB, test_cB)
+best_arima
+```
+
+# Print and Sort to extract the metrics for all models
+
+```{r}
+
+# Print the metrics for all models
+print(best_arima$metrics)
+best_model_metrics <- best_arima$metrics[which.min(best_arima$metrics$AIC), ]
+best_model_metrics
+
+# Sort the metrics data frame by AIC
+sorted_metrics <- best_arima$metrics[order(best_arima$metrics$AIC), ]
+
+# Extract the metrics for the best four models
+top_four_metrics <- head(sorted_metrics, 4)
+top <- rbind(top_four_metrics, best_model_metrics)
+ARIMAmodels <- as.data.frame(top)
+```
+
+### Step 8: Generate Forecasts for Each of the Top 4 Models
+
+```{r}
+# Step 8: Generate Forecasts for Each of the Top 4 Models
+forecasted_values <- list()
+for (i in 1:4) {
+  model_name <- top_four_metrics$Model[i]
+  model <- best_arima$best_models[[model_name]]  # Corrected to reference stored models
+  
+  forecasted_values[[model_name]] <- tryCatch(
+    forecast(model, h = length(test_cB))$mean,  # Removed undefined `xreg = test_disruption`
+    error = function(e) return(rep(NA, length(test_cB)))  # Handle errors gracefully
+  )
+}
+
+# Step 9: Format Forecast Results for Comparison
+forecast_df <- as.data.frame(forecasted_values)
+colnames(forecast_df) <- top_four_metrics$Model  # Assign model names as column headers
+# Add test data for direct comparison
+forecast_df$Actual_Test_Data <- test_cB
+
+read.csv("Cross.csv")
+# Save the forecasted values for the top 4 models in a CSV file
+head(forecast_df)
+n <- nrow(forecast_df) # Get the number of rows in y
+yearSORT<- Cross$yearSORT
+yr<-as.data.frame(tail(yearSORT, n)) # Extract the last n values from yearSORT
+f<-cbind(yr, forecast_df)
+head(f) 
+write.csv(f, "ARIMAtop_4_testCross_forecasts.csv", row.names = FALSE)
+
+write_csv(top, "CrossARIMA.csv")
+head(top)
+#CrossAri<-read.csv("CrossARIMA.csv")
+read.csv("CrossARIMA.csv")
+```
+
+```{r}
+acf_residuals <- residuals(best_arima$best_model)
+acf(acf_residuals, main = "ACF of Residuals for Best ARIMA Model")
+pacf_residuals <- residuals(best_arima$best_model)
+pacf(pacf_residuals, main = "PACF of Residuals for Best ARIMA Model")
+
+```
+
+```{r}
+checkresiduals(best_arima$best_model)
+```
+
+#ARIMA residuals testing applying the Jarque–Bera test for normality, Lagrange multiplier (LM) test for ARCH (Autoregressive conditional heteroskedasticity) effect and the Ljung–Box (LB) test for autocorrelation function
+
+```{r}
+#Perform the Jarque-Bera test on residuals
+residuals <- acf_residuals
+jb_test <- jarque.bera.test(residuals)
+print(jb_test)
+jb_stat <- jb_test$statistic
+jb_p_value <- jb_test$p.value
+cat("Jarque-Bera Test: Q-statistic =", jb_stat, ", p-value =", jb_p_value, "\n")
+jb <- data.frame(jb_stat, jb_p_value)
+library(lmtest)
+library(FinTS)
+# Perform the LM test for ARCH effect on residuals
+lm_test <- ArchTest(residuals, lags = 10)
+print(lm_test)
+lm_stat <- lm_test$statistic
+lm_p_value <- lm_test$p.value
+cat("ARCH LM Test: Q-statistic =", lm_stat, ", p-value =", lm_p_value, "\n")
+lm<- data.frame(lm_stat, lm_p_value)
+# Perform the Ljung-Box test on residuals
+Box_test <- Box.test(residuals, type = "Ljung-Box", lag = 10)
+print(Box_test)
+box_stat <- Box_test$statistic
+box_p_value <- Box_test$p.value
+cat("Ljung-Box Test: Q-statistic =", box_stat, ", p-value =", box_p_value, "\n")
+bm<- data.frame(box_stat, box_p_value)
+
+resiCross<- cbind("Cross",jb,lm,bm)
+#resiUpdate <- rbind(resiUpdate, resiCross)
+write.csv(resiCross, "resiCross.csv")
+head(resiCross)
+
+best_model <- best_arima$best_model
+
+```
+
+###FORECAST
+
+```{r}
+Cross<-read.csv("Cross.csv")
+cB<- (Cross$dataMIP)^2
+cB <- ts(cB, start = c(2015, 1), frequency = 228)
+#Generate forecast values
+#fore_cB<- length(1:(length(test_cB) + (228 * 2)))
+cases_fit<-arima(x=(cB), order=c(3,1,3)
+              #  ,seasonal=list(order=c(2,0,0))
+              )
+                 
+forecast_values <- forecast(cases_fit, h = 228*2, level = c(95))
+forecast_values
+
+
+```
+
+```{r}
+# Plot historical values and forecast while maintaining correct limits
+autoplot(cB) + 
+  autolayer(forecast_values, series = "Forecast", PI = TRUE) +
+  ggtitle("ARIMA(3,1,3) Forecast for CrossRiver State") +
+  xlab("Time (months)") + 
+  ylab("MIP Cases") +
+  scale_x_continuous(breaks = seq(2015, 2027, 1)) +
+  theme_minimal()
+```
+
+#SARIMAX analysis
+
+###Accounting for exogenous factor (Pandemic disruption)
+
+```{r}
+cB <- read.csv("mDNCross.csv") #### already in use
+cB = ts(cB, start = c(2015, 1), frequency = 228)
+
+# Split the data into training and test sets
+train_size <- floor(0.70 * length(cB))
+train_cB <- cB[1:train_size]
+test_cB <- cB[(length(train_cB) + 1):length(cB)]
+
+disrupt <- head(disruption, 1368)
+length(disrupt)
+tail(disrupt)
+
+train_disruption <- disrupt[1:train_size]  # Training regressor
+test_disruption <- disrupt[(train_size + 1):length(cB)]  # Testing regressor
+
+```
+
+### Fit SARIMAX Models & Store AIC Values
+
+```{r}
+models <- list()
+model_aic_values <- c()  # Store AIC values for sorting
+model_bic_values <- c()  # Define BIC storage
+
+#use denoising initial
+for (p in 1:3) {
+  for (d in 0:2) {
+    for (q in 0:3) {
+      for (P in 0:2) {
+        for (D in 0:2) {
+          for (Q in 0:2) {
+            model <- tryCatch(
+              Arima(train_cB, order = c(p, d, q), seasonal = c(P, D, Q), xreg = train_disruption),
+              error = function(e) return(NULL)  # Catch errors
+            )
+            if (!is.null(model)) {
+              model_name <- paste(p, d, q, P, D, Q)
+              models[[model_name]] <- model
+              model_aic_values[model_name] <- AIC(model)
+              model_bic_values[model_name] <- BIC(model)  # Store BIC
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+#summary(models)
+```
+
+###Select Best 4 Models Based on AIC
+
+```{r}
+sorted_indices <- order(model_aic_values)  # Sorting based on AIC
+print(model_bic_values )
+print(model_aic_values)
+print(data.frame(AIC = model_aic_values, BIC = model_bic_values))
+
+```
+
+Save Model Comparisons (AIC & BIC)
+
+```{r}
+best_model_metrics <- data.frame(
+  Model = names(models),
+  AIC = sapply(models, AIC),
+  BIC = sapply(models, BIC)
+)
+summary(best_model_metrics)
+
+```
+
+Get different AIC values,Sort in ascending order and select
+
+```{r, echo=FALSE}
+unique_aic_values <- unique(best_model_metrics$AIC)  
+sorted_aic_values <- sort(unique_aic_values) 
+selected_models <- list()
+for (aic_value in sorted_aic_values) {
+  subset_models <- best_model_metrics[best_model_metrics$AIC == aic_value, ]  
+  best_bic_model <- subset_models[which.min(subset_models$BIC), ]  
+  
+  selected_models[[as.character(aic_value)]] <- best_bic_model  
+}
+selected_models_df <- do.call(rbind, selected_models)
+print(selected_models_df)
+
+best_models <- models[selected_models_df$Model]  
+
+```
+
+###Evaluate Performance (RMSE & MAPE)
+
+```{r, echo=FALSE}
+evaluate_model <- function(model) {
+  forecasted <- tryCatch(
+    forecast(model, xreg = test_disruption, h = length(test_cB)),  # Forecast on test data
+    error = function(e) return(NULL)  # Catch errors
+  )
+  # Handle models that fail to forecast properly
+  if (is.null(forecasted)) return(c(AIC = AIC(model), BIC = BIC(model), RMSE = NA, MAPE = NA))
+  # Compute RMSE and MAPE
+  rmse <- sqrt(mean((test_cB - forecasted$mean)^2, na.rm = TRUE))  # Root Mean Squared Error
+  mape <- mean(abs((test_cB - forecasted$mean) / test_cB), na.rm = TRUE) * 100  # Mean Absolute Percentage Error
+  
+  return(c(AIC = AIC(model), BIC = BIC(model), RMSE = rmse, MAPE = mape))
+}
+
+
+metrics <- lapply(best_models, evaluate_model)  # Evaluate performance
+metrics_df <- do.call(rbind, metrics)  # Convert to data frame
+rownames(metrics_df) <- names(best_models)  # Assign model names
+write.csv(metrics_df, "model_evaluation_metrics.csv", row.names = TRUE)
+length(metrics_df)
+metrics_df <- as.data.frame(do.call(rbind, metrics))  # Ensure it's a data frame
+
+```
+
+Sort Models Based on RMSE
+
+```{r, echo=FALSE}
+sorted_models <- metrics_df[order(metrics_df$RMSE), ]  # Sort by lowest RMSE
+top_3_models <- sorted_models[1:3, ]  # Get the top 3 models
+
+forecasted_values <- list()
+
+for (i in 1:3) {
+  model_name <- rownames(top_3_models)[i]
+  model <- best_models[[model_name]]
+  
+  forecasted_values[[model_name]] <- tryCatch(
+    forecast(model, xreg = test_disruption, h = length(test_cB))$mean,  # Extract only forecasted values
+    error = function(e) return(rep(NA, length(test_cB)))  # Handle errors gracefully
+  )
+}
+
+#Format Forecast Results for Comparison
+forecast_df <- as.data.frame(forecasted_values)
+colnames(forecast_df) <- rownames(top_3_models)  # Assign model names as column headers
+
+# Add test data for direct comparison
+forecast_df$Actual_test_cB <- test_cB
+# Save the forecasted values for the top 3 models in a CSV file
+n <- nrow(forecast_df) # Get the number of rows in y
+yearSORT<- Cross$yearSORT
+yr<-as.data.frame(tail(yearSORT, n)) # Extract the last n values from yearSORT
+f<-cbind(yr, forecast_df)
+write.csv(f, "SARIMAtop_3_testCross_forecasts.csv", row.names = FALSE)
+head(forecast_df)
+```
+
+Select the Final Best Model
+
+```{r}
+best_model_index <- which.min(top_3_models$RMSE)  # Find model with lowest RMSE
+best_model_name <- rownames(top_3_models)[best_model_index]
+best_model <- best_models[[best_model_name]]
+
+summary(best_model)
+
+```
+
+Extract forecasted values for the best model
+
+```{r}
+best_model_forecast <- forecast(best_model, xreg = test_disruption, h = length(test_cB))$mean
+best_model_forecast_df <- data.frame(
+  Forecasted_Values = best_model_forecast,
+  Actual_test_cB = test_cB
+)
+
+
+```
+
+Save the best model’s forecasted values in another CSV file
+
+```{r}
+write.csv(best_model_forecast_df, "testCross_model_forecast.csv", row.names = FALSE)
+head(best_model_forecast_df)
+
+```
+
+Extracting model parameters safely
+
+```{r}
+best_model_params_df <- data.frame(
+  Model = best_model_name,  # Store the model name
+  p = best_model$arma[1],  # AR Order
+  d = best_model$arma[6],  # Differencing Order
+  q = best_model$arma[2],  # MA Order
+  P = best_model$arma[3],  # Seasonal AR Order
+  D = best_model$arma[7],  # Seasonal Differencing Order
+  Q = best_model$arma[4],  # Seasonal MA Order
+  Intercept = ifelse(!is.null(coef(best_model)[1]), coef(best_model)[1], NA)  # Intercept term
+)
+
+# Print formatted best model parameters
+print(best_model_params_df)
+
+# Save best model parameters to a CSV file
+write.csv(best_model_params_df, "CrossSARIMA_model_parameters.csv", row.names = FALSE)
+
+```
+
+###Extract residuals from the final best model
+
+```{r}
+acf_residuals <- residuals(best_model)
+acf(acf_residuals, main = "ACF of Residuals for Best SARIMAX Model")
+pacf_residuals <- residuals(best_model)
+pacf(pacf_residuals, main = "PACF of Residuals for Best SARIMAX Model")
+
+```
+
+Perform residual diagnostic check
+
+```{r}
+checkresiduals(best_model)
+
+```
+
+Residuals testing applying the Jarque–Bera test for normality, Lagrange multiplier (LM) test for ARCH (Autoregressive conditional heteroskedasticity) effect and the Ljung–Box (LB) test for autocorrelation function
+
+```{r, echo=FALSE}
+#Perform the Jarque-Bera test on residuals
+residuals <- acf_residuals
+jb_test <- jarque.bera.test(residuals)
+print(jb_test)
+jb_stat <- jb_test$statistic
+jb_p_value <- jb_test$p.value
+cat("Jarque-Bera Test: Q-statistic =", jb_stat, ", p-value =", jb_p_value, "\n")
+jb2 <- data.frame(jb_stat, jb_p_value)
+library(lmtest)
+library(FinTS)
+# Perform the LM test for ARCH effect on residuals
+lm_test <- ArchTest(residuals, lags = 10)
+print(lm_test)
+lm_stat <- lm_test$statistic
+lm_p_value <- lm_test$p.value
+cat("ARCH LM Test: Q-statistic =", lm_stat, ", p-value =", lm_p_value, "\n")
+lm2<- data.frame(lm_stat, lm_p_value)
+# Perform the Ljung-Box test on residuals
+Box_test <- Box.test(residuals, type = "Ljung-Box", lag = 10)
+print(Box_test)
+box_stat <- Box_test$statistic
+box_p_value <- Box_test$p.value
+cat("Ljung-Box Test: Q-statistic =", box_stat, ", p-value =", box_p_value, "\n")
+bm2<- data.frame(box_stat, box_p_value)
+
+resiCross2<- cbind("Cross2",jb2,lm2,bm2)
+#resiUpdate <- rbind(resiUpdate, resiCross)
+write.csv(resiCross2, "resiCross2.csv")
+head(resiCross2)
+
+```
+
+Prepare Exogenous Variables for Future Forecast, using original data unit
+
+```{r}
+Cross<-read.csv("Cross.csv")
+dataMIP<-(Cross$dataMIP)^2
+dataMIP_ts <- ts(dataMIP, start = c(2015, 1), frequency = 228)
+disruption<-(Cross$disruption)^2
+length(dataMIP)
+summary(dataMIP)
+dataMIP <- ts(dataMIP, start = c(2015, 1), frequency = 228)  # 228 points per year
+yearSORT <- seq(as.Date("2015-01-01"), as.Date("2025-01-19"), by = "day") # Keep only the first 19 days of each month (matching LGA records) 
+yearSORT <- yearSORT[as.numeric(format(yearSORT, "%d")) <=19] # Represents 19 LGAs per month
+disruption <- ifelse( yearSORT >= as.Date("2020-03-01") & yearSORT <= as.Date("2020-12-19"), 1, 
+                           ifelse(yearSORT >= as.Date("2021-01-01"), exp(-0.1 * (as.numeric(yearSORT - as.Date("2021-01-01")))), 0) )
+
+
+```
+
+###Fit Best SARIMAX Model with Exogenous Regressors
+
+```{r}
+# Step 1: 
+cases_fit <- Arima(dataMIP, order = c(2,0,2), seasonal = c(0,0,0), xreg = disruption)
+
+last_disruption_value <- tail(disruption, 1)
+future_disruption <- c(disruption, last_disruption_value * exp(-0.05 * (1:456)))
+
+```
+
+###Forecast Using the Best SARIMAX Model 2 years for 19LGAs (for Cross River State) by 12months = 456 datapoints
+
+```{r}
+future_disruption <- future_disruption[1:456]  # Restrict future periods to 456
+
+# Step 3: 
+final_forecast <- forecast(cases_fit, xreg = future_disruption, h = 456)
+final_forecast
+```
+
+##Plot historical values and forecast while maintaining correct limits
+
+```{r}
+autoplot(dataMIP_ts) + 
+  autolayer(final_forecast, series = "Forecast", PI = TRUE) +
+  ggtitle("SARIMAX(2,0,2)(0,0,0) Forecast for CrossRiver State") +
+  xlab("Time (months)") + 
+  ylab("MIP Cases") +
+  scale_x_continuous(breaks = seq(2015, 2027, 1)) +
+  theme_minimal()
+
+```
