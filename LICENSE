@@ -1,11 +1,12 @@
-Creative Commons Attribution-NonCommercial 4.0 International
+## 📄 License
 
-You are free to:
-- Share — copy and redistribute the material in any medium or format
-- Adapt — remix, transform, and build upon the material
+### Code License
+The code in this repository is licensed under the [MIT License](https://opensource.org/licenses/MIT).  
+You may use, modify, and distribute it freely with attribution.
 
-Under the following terms:
-- Attribution — You must give appropriate credit, provide a link to the license, and indicate if changes were made.
-- NonCommercial — You may not use the material for commercial purposes.
+### Data License
+The dataset associated with this project is hosted on Figshare:  
+➡ [https://doi.org/10.6084/m9.figshare.29145854](https://doi.org/10.6084/m9.figshare.29145854)
 
-License details: https://creativecommons.org/licenses/by-nc/4.0/
+It is licensed under the [Creative Commons Attribution-NonCommercial 4.0 International License](https://creativecommons.org/licenses/by-nc/4.0/).  
+Reuse is permitted for **non-commercial academic purposes** with appropriate citation.
