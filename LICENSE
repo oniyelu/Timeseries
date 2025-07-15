@@ -1,12 +1,32 @@
 ## 📄 License
 
-### Code License
-The code in this repository is licensed under the [MIT License](https://opensource.org/licenses/MIT).  
-You may use, modify, and distribute it freely with attribution.
+[![License: CC BY-NC 4.0](https://img.shields.io/badge/License-CC_BY--NC_4.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc/4.0/)
 
-### Data License
-The dataset associated with this project is hosted on Figshare:  
+This repository — including both the analysis code and accompanying metadata — is licensed under the [Creative Commons Attribution-NonCommercial 4.0 International License](https://creativecommons.org/licenses/by-nc/4.0/).
+
+You are free to:
+- Share — copy and redistribute the material in any medium or format
+- Adapt — remix, transform, and build upon the material
+
+Under the following terms:
+- Attribution — You must give appropriate credit, provide a link to the license, and indicate if changes were made.
+- NonCommercial — You may not use the material for commercial purposes.
+
+The **processed dataset** used in this project is hosted separately on Figshare:  
 ➡ [https://doi.org/10.6084/m9.figshare.29145854](https://doi.org/10.6084/m9.figshare.29145854)
 
-It is licensed under the [Creative Commons Attribution-NonCommercial 4.0 International License](https://creativecommons.org/licenses/by-nc/4.0/).  
-Reuse is permitted for **non-commercial academic purposes** with appropriate citation.
+---
+
+## 📚 How to Cite This Work
+
+If you use this code or data in your research, please include the following citation (or adapt it to your referencing style):
+
+> Oniyelu, D. O. et al. (2025). *Time Series Analysis of Malaria in Pregnancy: Wavelet and ARIMA Approaches*. Figshare. https://doi.org/10.6084/m9.figshare.29145854
+
+You’re also welcome to include a GitHub reference like:
+
+> Oniyelu, D. O. (2025). GitHub repository: https://github.com/oniyelu/Timeseries
+
+---
+
+Let me know if you’d like to personalize this citation style for APA, MLA, or another format. You’re nearly there — this documentation is clear, credible, and ready to impress 👏.
