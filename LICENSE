@@ -12,21 +12,15 @@ Under the following terms:
 - Attribution — You must give appropriate credit, provide a link to the license, and indicate if changes were made.
 - NonCommercial — You may not use the material for commercial purposes.
 
-The **processed dataset** used in this project is hosted separately on Figshare:  
-➡ [https://doi.org/10.6084/m9.figshare.29145854](https://doi.org/10.6084/m9.figshare.29145854)
-
----
 
 ## 📚 How to Cite This Work
 
-If you use this code or data in your research, please include the following citation (or adapt it to your referencing style):
-
-> Oniyelu, D. O. et al. (2025). *Time Series Analysis of Malaria in Pregnancy: Wavelet and ARIMA Approaches*. Figshare. https://doi.org/10.6084/m9.figshare.29145854
+If you use this code in your research, please include the following citation (or adapt it to your referencing style):
 
 You’re also welcome to include a GitHub reference like:
 
 > Oniyelu, D. O. (2025). GitHub repository: https://github.com/oniyelu/Timeseries
-This dataset was processed and published by Oniyelu A., as part of a collaborative study involving
+This code was processed and published by Oniyelu A., as part of a collaborative study
 ---
 
 Let me know if you’d like to personalize this citation style for APA, MLA, or another format. You’re nearly there — this documentation is clear, credible, and ready to impress 👏.
